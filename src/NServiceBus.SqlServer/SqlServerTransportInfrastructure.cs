@@ -6,6 +6,7 @@ namespace NServiceBus.Transport.SQLServer
     using System.Linq;
     using System.Threading.Tasks;
     using System.Transactions;
+    using DelayedDelivery;
     using Performance.TimeToBeReceived;
     using Routing;
     using Settings;
@@ -21,17 +22,25 @@ namespace NServiceBus.Transport.SQLServer
 
             this.endpointSchemasSettings = settings.GetOrCreate<EndpointSchemasSettings>();
 
-            //HINT: this flag indicates that user need to explicitly turn outbox in configuration.
+            //HINT: this flag indicates that user need to explicitly turn outbox in configusration.
             RequireOutboxConsent = true;
         }
 
         /// <summary>
         /// <see cref="TransportInfrastructure.DeliveryConstraints" />
         /// </summary>
-        public override IEnumerable<Type> DeliveryConstraints { get; } = new[]
+        public override IEnumerable<Type> DeliveryConstraints
         {
-            typeof(DiscardIfNotReceivedBefore)
-        };
+            get
+            {
+                yield return typeof(DiscardIfNotReceivedBefore);
+                if (settings.HasSetting<DelayedDeliverySettings>())
+                {
+                    yield return typeof(DoNotDeliverBefore);
+                    yield return typeof(DelayDeliveryWith);
+                }
+            }
+        }
 
         /// <summary>
         /// <see cref="TransportInfrastructure.TransactionMode" />
@@ -78,9 +87,22 @@ namespace NServiceBus.Transport.SQLServer
 
             Func<QueueAddress, TableBasedQueue> queueFactory = qa => new TableBasedQueue(qa);
 
+            QueueAddress delayedMessageStore;
+            var nativeDelayedDeliverySettings = settings.GetOrDefault<DelayedDeliverySettings>();
+            if (nativeDelayedDeliverySettings != null)
+            {
+                var localAddress = addressParser.Parse(settings.LocalAddress());
+                var delayedTableName = localAddress.TableName + "." + nativeDelayedDeliverySettings.TableSuffix;
+                delayedMessageStore = new QueueAddress(delayedTableName, localAddress.SchemaName);
+            }
+            else
+            {
+                delayedMessageStore = null;
+            }
+
             return new TransportReceiveInfrastructure(
                 () => new MessagePump(receiveStrategyFactory, queueFactory, queuePurger, expiredMessagesPurger, queuePeeker, addressParser, waitTimeCircuitBreaker),
-                () => new QueueCreator(connectionFactory, addressParser),
+                () => new QueueCreator(connectionFactory, addressParser, delayedMessageStore),
                 () => Task.FromResult(StartupCheckResult.Success));
         }
 
@@ -132,14 +154,40 @@ namespace NServiceBus.Transport.SQLServer
             var connectionFactory = CreateConnectionFactory();
 
             settings.Get<EndpointInstances>().AddOrReplaceInstances("SqlServer", endpointSchemasSettings.ToEndpointInstances());
-
+            var nativeDelayedDeliverySettings = settings.GetOrDefault<DelayedDeliverySettings>();
+            DelayedMessageTable delayedMessageTable = null;
+            if (nativeDelayedDeliverySettings != null)
+            {
+                delayedMessageTable = new DelayedMessageTable(settings.LocalAddress(), nativeDelayedDeliverySettings.TableSuffix, addressParser);
+            }
             return new TransportSendInfrastructure(
-                () => new MessageDispatcher(new TableBasedQueueDispatcher(connectionFactory), addressParser),
+                () => new MessageDispatcher(new TableBasedQueueDispatcher(connectionFactory, delayedMessageTable,  addressParser), addressParser),
                 () =>
                 {
                     var result = UsingV2ConfigurationChecker.Check();
                     return Task.FromResult(result);
                 });
+        }
+
+        public override Task Start()
+        {
+            var nativeDelayedDeliverySettings = settings.GetOrDefault<DelayedDeliverySettings>();
+            if (nativeDelayedDeliverySettings != null)
+            {
+                var delayedMessageTable = new DelayedMessageTable(settings.LocalAddress(), nativeDelayedDeliverySettings.TableSuffix, addressParser);
+                delayedMessageHandler = new MaturedDelayMessageHandler(delayedMessageTable, CreateConnectionFactory(), TimeSpan.FromSeconds(nativeDelayedDeliverySettings.ProcessingResolution));
+                delayedMessageHandler.Start();
+            }
+            return Task.FromResult(0);
+        }
+
+        public override Task Stop()
+        {
+            if (delayedMessageHandler != null)
+            {
+                return delayedMessageHandler.Stop();
+            }
+            return Task.FromResult(0);
         }
 
         /// <summary>
@@ -195,10 +243,11 @@ namespace NServiceBus.Transport.SQLServer
         {
             return addressParser.Parse(transportAddress).ToString();
         }
-
+        
         QueueAddressParser addressParser;
         string connectionString;
         SettingsHolder settings;
         EndpointSchemasSettings endpointSchemasSettings;
+        MaturedDelayMessageHandler delayedMessageHandler;
     }
 }

@@ -84,8 +84,9 @@
                 }
 
                 LegacyCallbacks.SubstituteReplyToWithCallbackQueueIfExists(parsedHeaders);
-
-                return MessageReadResult.Success(new Message(id.ToString(), parsedHeaders, bodyBytes));
+                string forwardDestination;
+                parsedHeaders.TryGetValue("NServiceBus.SqlServer.ForwardDestination", out forwardDestination);
+                return MessageReadResult.Success(new Message(id.ToString(), parsedHeaders, bodyBytes, forwardDestination));
             }
             catch (Exception ex)
             {

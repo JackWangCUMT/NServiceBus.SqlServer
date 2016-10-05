@@ -1,6 +1,7 @@
 ﻿namespace NServiceBus.Transport.SQLServer
 {
     using System;
+    using System.Data.SqlClient;
     using System.Threading;
     using System.Threading.Tasks;
     using Extensibility;
@@ -9,20 +10,61 @@
     {
         protected TableBasedQueue InputQueue { get; private set; }
         protected TableBasedQueue ErrorQueue { get; private set; }
+        protected Func<string, TableBasedQueue> QueueFactory { get; private set; }
 
         Func<MessageContext, Task> onMessage;
         Func<ErrorContext, Task<ErrorHandleResult>> onError;
 
-        public void Init(TableBasedQueue inputQueue, TableBasedQueue errorQueue, Func<MessageContext, Task> onMessage, Func<ErrorContext, Task<ErrorHandleResult>> onError, CriticalError criticalError)
+        public void Init(TableBasedQueue inputQueue, TableBasedQueue errorQueue, Func<string, TableBasedQueue> queueFactory, Func<MessageContext, Task> onMessage, Func<ErrorContext, Task<ErrorHandleResult>> onError, CriticalError criticalError)
         {
             InputQueue = inputQueue;
             ErrorQueue = errorQueue;
+            QueueFactory = queueFactory;
+
             this.onMessage = onMessage;
             this.onError = onError;
             this.criticalError = criticalError;
         }
 
         public abstract Task ReceiveMessage(CancellationTokenSource receiveCancellationTokenSource);
+
+        protected async Task<Message> TryReceive(SqlConnection connection, SqlTransaction transaction, CancellationTokenSource receiveCancellationTokenSource)
+        {
+            var receiveResult = await InputQueue.TryReceive(connection, transaction).ConfigureAwait(false);
+
+            if (receiveResult.IsPoison)
+            {
+                await DeadLetter(receiveResult, connection, transaction).ConfigureAwait(false);
+                return null;
+            }
+
+            if (!receiveResult.Successful)
+            {
+                receiveCancellationTokenSource.Cancel();
+                return null;
+            }
+
+            var message = receiveResult.Message;
+            if (message.ForwardDestination != null)
+            {
+                //Forward the message
+                var destinationQueue = QueueFactory(message.ForwardDestination);
+                var outgoingMessage = new OutgoingMessage(message.TransportId, message.Headers, message.Body);
+                await ForwardDelayed(outgoingMessage, message.ForwardDestination, destinationQueue, connection, transaction).ConfigureAwait(false);
+                return null;
+            }
+            return message;
+        }
+
+        protected virtual async Task ForwardDelayed(OutgoingMessage outgoingMessage, string destination, TableBasedQueue destinationQueue, SqlConnection connection, SqlTransaction transaction)
+        {
+            await destinationQueue.Send(outgoingMessage, connection, transaction).ConfigureAwait(false);
+        }
+
+        protected virtual async Task DeadLetter(MessageReadResult receiveResult, SqlConnection connection, SqlTransaction transaction)
+        {
+            await ErrorQueue.DeadLetter(receiveResult.PoisonMessage, connection, transaction).ConfigureAwait(false);
+        }
 
         protected async Task<bool> TryProcessingMessage(Message message, TransportTransaction transportTransaction)
         {

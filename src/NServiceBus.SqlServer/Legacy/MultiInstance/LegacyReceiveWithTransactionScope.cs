@@ -23,7 +23,7 @@
                 using (var scope = new TransactionScope(TransactionScopeOption.RequiresNew, transactionOptions, TransactionScopeAsyncFlowOption.Enabled))
                 using (var inputConnection = await connectionFactory.OpenNewConnection(InputQueue.TransportAddress).ConfigureAwait(false))
                 {
-                    message = await TryReceive(inputConnection, receiveCancellationTokenSource).ConfigureAwait(false);
+                    message = await TryReceive(inputConnection, null, receiveCancellationTokenSource).ConfigureAwait(false);
 
                     if (message == null)
                     {
@@ -50,26 +50,20 @@
             }
         }
 
-        async Task<Message> TryReceive(SqlConnection connection, CancellationTokenSource receiveCancellationTokenSource)
+        protected override async Task ForwardDelayed(OutgoingMessage outgoingMessage, string destination, TableBasedQueue destinationQueue, SqlConnection connection, SqlTransaction transaction)
         {
-            var receiveResult = await InputQueue.TryReceive(connection, null).ConfigureAwait(false);
-
-            if (!receiveResult.Successful)
+            using (var forwardConnection = await connectionFactory.OpenNewConnection(destination).ConfigureAwait(false))
             {
-                receiveCancellationTokenSource.Cancel();
-                return null;
+                await destinationQueue.Send(outgoingMessage, forwardConnection, null).ConfigureAwait(false);
             }
+        }
 
-            if (receiveResult.IsPoison)
+        protected override async Task DeadLetter(MessageReadResult receiveResult, SqlConnection connection, SqlTransaction transaction)
+        {
+            using (var errorConnection = await connectionFactory.OpenNewConnection(ErrorQueue.TransportAddress).ConfigureAwait(false))
             {
-                using (var errorConnection = await connectionFactory.OpenNewConnection(ErrorQueue.TransportAddress).ConfigureAwait(false))
-                {
-                    await ErrorQueue.DeadLetter(receiveResult.PoisonMessage, errorConnection, null).ConfigureAwait(false);
-                    return null;
-                }
+                await ErrorQueue.DeadLetter(receiveResult.PoisonMessage, errorConnection, null).ConfigureAwait(false);
             }
-
-            return receiveResult.Message;
         }
 
         TransportTransaction PrepareTransportTransaction(SqlConnection connection)
