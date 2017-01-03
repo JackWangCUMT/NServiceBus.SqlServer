@@ -8,6 +8,7 @@ using NServiceBus.AcceptanceTesting.Support;
 using NServiceBus.AcceptanceTests.ScenarioDescriptors;
 using NServiceBus.Configuration.AdvanceExtensibility;
 using NServiceBus.Transport;
+using NServiceBus.Transport.SQLServer;
 
 public class ConfigureScenariosForSqlServerTransport : IConfigureSupportedScenariosForTestExecution
 {
@@ -25,7 +26,7 @@ public class ConfigureEndpointSqlServerTransport : IConfigureEndpointTestExecuti
     {
         queueBindings = configuration.GetSettings().Get<QueueBindings>();
         connectionString = settings.Get<string>("Transport.ConnectionString");
-        configuration.UseTransport<SqlServerTransport>().ConnectionString(connectionString);
+        configuration.UseTransport<SqlServerTransport>().ConnectionString(connectionString).EnableNativeDelayedMessageDelivery();
         return Task.FromResult(0);
     }
 

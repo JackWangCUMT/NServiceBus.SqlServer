@@ -14,12 +14,14 @@ namespace NServiceBus.Transport.SQLServer
         SqlConnectionFactory connectionFactory;
         DelayedMessageTable delayedMessageTable;
         QueueAddressParser addressParser;
+        string localAddress;
 
-        public TableBasedQueueDispatcher(SqlConnectionFactory connectionFactory, DelayedMessageTable delayedMessageTable, QueueAddressParser addressParser)
+        public TableBasedQueueDispatcher(SqlConnectionFactory connectionFactory, DelayedMessageTable delayedMessageTable, QueueAddressParser addressParser, string localAddress)
         {
             this.connectionFactory = connectionFactory;
             this.delayedMessageTable = delayedMessageTable;
             this.addressParser = addressParser;
+            this.localAddress = localAddress;
         }
 
         public async Task DispatchAsIsolated(UnicastTransportOperation[] operations)
@@ -108,7 +110,11 @@ namespace NServiceBus.Transport.SQLServer
                 }
                 else
                 {
-                    await delayedMessageTable.Store(operation.Message, due.Value, operation.Destination, connection, transaction).ConfigureAwait(false);
+                    var forwardDestination = operation.Destination == localAddress
+                        ? null
+                        : operation.Destination;
+
+                    await delayedMessageTable.Store(operation.Message, due.Value, forwardDestination, connection, transaction).ConfigureAwait(false);
                 }
             }
         }

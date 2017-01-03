@@ -22,8 +22,8 @@ namespace NServiceBus.Transport.SQLServer
               IF ( (512 & @@OPTIONS) = 512 ) SET @NOCOUNT = 'ON'
               SET NOCOUNT ON;
 
-              INSERT INTO {0}.{1} ([Id],[CorrelationId],[ReplyToAddress],[Recoverable],[Expires],[Headers],[Body],[Due],[Destination])
-              VALUES (@Id,@CorrelationId,@ReplyToAddress,@Recoverable,CASE WHEN @TimeToBeReceivedMs IS NOT NULL THEN DATEADD(ms, @TimeToBeReceivedMs, GETUTCDATE()) END,@Headers,@Body,@Due,@Destination);;
+              INSERT INTO {0}.{1} ([Id],[CorrelationId],[ReplyToAddress],[Recoverable],[Expires],[Headers],[Body],[Due])
+              VALUES (@Id,@CorrelationId,@ReplyToAddress,@Recoverable,CASE WHEN @TimeToBeReceivedMs IS NOT NULL THEN DATEADD(ms, @TimeToBeReceivedMs, GETUTCDATE()) END,@Headers,@Body,@Due);;
 
               IF(@NOCOUNT = 'ON') SET NOCOUNT ON;
               IF(@NOCOUNT = 'OFF') SET NOCOUNT OFF;";
@@ -42,7 +42,7 @@ namespace NServiceBus.Transport.SQLServer
         internal const string MoveMaturedDelayedMessageText = @"
             WITH msg AS (SELECT TOP(100) * FROM {0}.{1} WITH (UPDLOCK, READPAST, ROWLOCK) WHERE [Due] < GETUTCDATE())
             DELETE FROM msg
-            OUTPUT deleted.Id, deleted.CorrelationId, deleted.ReplyToAddress, deleted.Recoverable, deleted.Expires, deleted.Headers, deleted.Body, deleted.Destination INTO {0}.{2}
+            OUTPUT deleted.Id, deleted.CorrelationId, deleted.ReplyToAddress, deleted.Recoverable, deleted.Expires, deleted.Headers, deleted.Body INTO {0}.{2}
 ";
 
         internal const string PeekText = "SELECT count(*) Id FROM {0}.{1} WITH (READPAST) WHERE [Expires] IS NULL OR [Expires] > GETUTCDATE();";

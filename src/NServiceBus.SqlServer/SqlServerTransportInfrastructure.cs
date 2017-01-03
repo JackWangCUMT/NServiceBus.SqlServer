@@ -161,7 +161,7 @@ namespace NServiceBus.Transport.SQLServer
                 delayedMessageTable = new DelayedMessageTable(settings.LocalAddress(), nativeDelayedDeliverySettings.TableSuffix, addressParser);
             }
             return new TransportSendInfrastructure(
-                () => new MessageDispatcher(new TableBasedQueueDispatcher(connectionFactory, delayedMessageTable,  addressParser), addressParser),
+                () => new MessageDispatcher(new TableBasedQueueDispatcher(connectionFactory, delayedMessageTable,  addressParser, settings.LocalAddress()), addressParser),
                 () =>
                 {
                     var result = UsingV2ConfigurationChecker.Check();
