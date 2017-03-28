@@ -49,12 +49,12 @@ namespace NServiceBus
             else
             {
                 var catalog = GetDefaultCatalog(settings, connectionString);
-                var addressParser = new QueueAddressTranslator((string)catalog, "dbo", defaultSchemaOverride, queueSchemaSettings);
+                var addressParser = new QueueAddressTranslator(catalog, "dbo", defaultSchemaOverride, queueSchemaSettings);
                 return new SqlServerTransportInfrastructure(addressParser, settings, connectionString);
             }
         }
 
-        static object GetDefaultCatalog(SettingsHolder settings, string connectionString)
+        static string GetDefaultCatalog(SettingsHolder settings, string connectionString)
         {
             Func<Task<SqlConnection>> factoryOverride;
             if (settings.TryGet(SettingsKeys.ConnectionFactoryOverride, out factoryOverride))
@@ -77,7 +77,7 @@ namespace NServiceBus
             {
                 throw new Exception("Initial Catalog property is mandatory in the connection string.");
             }
-            return catalog;
+            return (string)catalog;
         }
     }
 }
