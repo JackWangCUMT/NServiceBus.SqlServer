@@ -77,7 +77,10 @@
             Guard.AgainstNullAndEmpty(nameof(endpointName), endpointName);
             Guard.AgainstNullAndEmpty(nameof(catalog), catalog);
 
-            var schemasConfiguration = transportExtensions.GetSettings().GetOrCreate<EndpointSchemaAndCatalogSettings>();
+            var settings = transportExtensions.GetSettings();
+
+            settings.Set(SettingsKeys.MultiCatalogEnabled, true);
+            var schemasConfiguration = settings.GetOrCreate<EndpointSchemaAndCatalogSettings>();
 
             schemasConfiguration.SpecifyCatalog(endpointName, catalog);
 
@@ -97,7 +100,10 @@
             Guard.AgainstNullAndEmpty(nameof(queueName), queueName);
             Guard.AgainstNullAndEmpty(nameof(catalog), catalog);
 
-            var schemasConfiguration = transportExtensions.GetSettings().GetOrCreate<QueueSchemaAndCatalogSettings>();
+            var settings = transportExtensions.GetSettings();
+
+            settings.Set(SettingsKeys.MultiCatalogEnabled, true);
+            var schemasConfiguration = settings.GetOrCreate<QueueSchemaAndCatalogSettings>();
 
             schemasConfiguration.SpecifyCatalog(queueName, catalog);
 

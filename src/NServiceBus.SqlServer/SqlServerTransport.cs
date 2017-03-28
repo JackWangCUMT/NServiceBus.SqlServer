@@ -28,7 +28,12 @@ namespace NServiceBus
         {
             Func<string, Task<SqlConnection>> legacyModeTurnedOn;
 
-            return settings.TryGet(SettingsKeys.LegacyMultiInstanceConnectionFactory, out legacyModeTurnedOn);
+            var legacyMode = settings.TryGet(SettingsKeys.LegacyMultiInstanceConnectionFactory, out legacyModeTurnedOn);
+            if (legacyMode && settings.HasSetting(SettingsKeys.MultiCatalogEnabled))
+            {
+                throw new Exception("Multi-catalog configuration is not supported in legacy multi instance mode. Please configure each catalog using a separate connection string.");
+            }
+            return legacyMode;
         }
 
         /// <summary>
@@ -43,7 +48,6 @@ namespace NServiceBus
             if (LegacyMultiInstanceModeTurnedOn(settings))
             {
                 var addressParser = new LegacyQueueAddressTranslator("dbo", defaultSchemaOverride, queueSchemaSettings);
-
                 return new LegacySqlServerTransportInfrastructure(addressParser, settings);
             }
             else
