@@ -8,10 +8,11 @@ namespace NServiceBus.Transport.SQLServer
 
     class TableBasedQueueDispatcher : IQueueDispatcher
     {
-        public TableBasedQueueDispatcher(SqlConnectionFactory connectionFactory, QueueAddressTranslator addressTranslator)
+        public TableBasedQueueDispatcher(SqlConnectionFactory connectionFactory, QueueAddressTranslator addressTranslator, TableBasedQueueFactory queueFactory)
         {
             this.connectionFactory = connectionFactory;
             this.addressTranslator = addressTranslator;
+            this.queueFactory = queueFactory;
         }
 
         public async Task DispatchAsIsolated(List<UnicastTransportOperation> operations)
@@ -92,7 +93,7 @@ namespace NServiceBus.Transport.SQLServer
             foreach (var operation in operations)
             {
                 var address = addressTranslator.Parse(operation.Destination);
-                var queue = new TableBasedQueue(address.QualifiedTableName, address.Address);
+                var queue = queueFactory.Get(address.QualifiedTableName, address.Address);
                 await queue.Send(operation.Message.Headers, operation.Message.Body, connection, transaction).ConfigureAwait(false);
             }
         }
@@ -116,5 +117,6 @@ namespace NServiceBus.Transport.SQLServer
 
         SqlConnectionFactory connectionFactory;
         QueueAddressTranslator addressTranslator;
+        TableBasedQueueFactory queueFactory;
     }
 }

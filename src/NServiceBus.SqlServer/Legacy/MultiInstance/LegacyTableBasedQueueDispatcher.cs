@@ -6,10 +6,11 @@ namespace NServiceBus.Transport.SQLServer
 
     class LegacyTableBasedQueueDispatcher : IQueueDispatcher
     {
-        public LegacyTableBasedQueueDispatcher(LegacySqlConnectionFactory connectionFactory, LegacyQueueAddressTranslator addressTranslator)
+        public LegacyTableBasedQueueDispatcher(LegacySqlConnectionFactory connectionFactory, LegacyQueueAddressTranslator addressTranslator, TableBasedQueueFactory queueFactory)
         {
             this.connectionFactory = connectionFactory;
             this.addressTranslator = addressTranslator;
+            this.queueFactory = queueFactory;
         }
 
         public virtual async Task DispatchAsNonIsolated(List<UnicastTransportOperation> operations, TransportTransaction transportTransaction)
@@ -20,7 +21,7 @@ namespace NServiceBus.Transport.SQLServer
                 foreach (var operation in operations)
                 {
                     var address = addressTranslator.Parse(operation.Destination);
-                    var queue = new TableBasedQueue(address.QualifiedTableName, address.Address);
+                    var queue = queueFactory.Get(address.QualifiedTableName, address.Address);
                     using (var connection = await connectionFactory.OpenNewConnection(queue.Name).ConfigureAwait(false))
                     {
                         await queue.Send(operation.Message.Headers, operation.Message.Body, connection, null).ConfigureAwait(false);
@@ -37,7 +38,7 @@ namespace NServiceBus.Transport.SQLServer
                 foreach (var operation in operations)
                 {
                     var address = addressTranslator.Parse(operation.Destination);
-                    var queue = new TableBasedQueue(address.QualifiedTableName, address.Address);
+                    var queue = queueFactory.Get(address.QualifiedTableName, address.Address);
                     using (var connection = await connectionFactory.OpenNewConnection(queue.Name).ConfigureAwait(false))
                     {
                         await queue.Send(operation.Message.Headers, operation.Message.Body, connection, null).ConfigureAwait(false);
@@ -47,7 +48,7 @@ namespace NServiceBus.Transport.SQLServer
             }
         }
 
-        TableBasedQueueFactory queueFactory = new TableBasedQueueFactory();
+        TableBasedQueueFactory queueFactory;
         LegacySqlConnectionFactory connectionFactory;
         LegacyQueueAddressTranslator addressTranslator;
     }

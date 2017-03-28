@@ -115,9 +115,9 @@ namespace NServiceBus.Transport.SQLServer
         {
             var connectionFactory = CreateConnectionFactory();
             settings.Get<EndpointInstances>().AddOrReplaceInstances("SqlServer", schemaAndCatalogSettings.ToEndpointInstances());
-
+            var queueFactory = new TableBasedQueueFactory();
             return new TransportSendInfrastructure(
-                () => new MessageDispatcher(new TableBasedQueueDispatcher(connectionFactory, addressTranslator), addressTranslator),
+                () => new MessageDispatcher(new TableBasedQueueDispatcher(connectionFactory, addressTranslator, queueFactory), addressTranslator),
                 () =>
                 {
                     var result = UsingV2ConfigurationChecker.Check();

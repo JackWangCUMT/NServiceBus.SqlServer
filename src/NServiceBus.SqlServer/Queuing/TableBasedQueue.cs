@@ -16,30 +16,33 @@ namespace NServiceBus.Transport.SQLServer
 
         public TableBasedQueue(string qualifiedTableName, string queueName)
         {
+#pragma warning disable 618
             this.qualifiedTableName = qualifiedTableName;
             Name = queueName;
+            peekCommand = Format(SqlConstants.PeekText, this.qualifiedTableName);
+            receiveCommand = Format(SqlConstants.ReceiveText, this.qualifiedTableName);
+            sendCommand = Format(SqlConstants.SendText, this.qualifiedTableName);
+            purgeCommand = Format(SqlConstants.PurgeText, this.qualifiedTableName);
+            purgeExpiredCommand = Format(SqlConstants.PurgeBatchOfExpiredMessagesText, this.qualifiedTableName);
+            checkIndexCommand = Format(SqlConstants.CheckIfExpiresIndexIsPresent, this.qualifiedTableName);
+#pragma warning restore 618
         }
 
         public virtual async Task<int> TryPeek(SqlConnection connection, CancellationToken token, int timeoutInSeconds = 30)
         {
-            var commandText = Format(Sql.PeekText, qualifiedTableName);
-
-            using (var command = new SqlCommand(commandText, connection)
+            using (var command = new SqlCommand(peekCommand, connection)
             {
                 CommandTimeout = timeoutInSeconds
             })
             {
                 var numberOfMessages = (int) await command.ExecuteScalarAsync(token).ConfigureAwait(false);
-
                 return numberOfMessages;
             }
         }
 
         public virtual async Task<MessageReadResult> TryReceive(SqlConnection connection, SqlTransaction transaction)
         {
-            var commandText = Format(Sql.ReceiveText, qualifiedTableName);
-
-            using (var command = new SqlCommand(commandText, connection, transaction))
+            using (var command = new SqlCommand(receiveCommand, connection, transaction))
             {
                 return await ReadMessage(command).ConfigureAwait(false);
             }
@@ -75,11 +78,9 @@ namespace NServiceBus.Transport.SQLServer
 
         async Task SendRawMessage(MessageRow message, SqlConnection connection, SqlTransaction transaction)
         {
-            var commandText = Format(Sql.SendText, qualifiedTableName);
-
             try
             {
-                using (var command = new SqlCommand(commandText, connection, transaction))
+                using (var command = new SqlCommand(sendCommand, connection, transaction))
                 {
                     message.PrepareSendCommand(command);
 
@@ -113,9 +114,7 @@ namespace NServiceBus.Transport.SQLServer
 
         public async Task<int> Purge(SqlConnection connection)
         {
-            var commandText = Format(Sql.PurgeText, qualifiedTableName);
-
-            using (var command = new SqlCommand(commandText, connection))
+            using (var command = new SqlCommand(purgeCommand, connection))
             {
                 return await command.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
@@ -123,26 +122,22 @@ namespace NServiceBus.Transport.SQLServer
 
         public async Task<int> PurgeBatchOfExpiredMessages(SqlConnection connection, int purgeBatchSize)
         {
-            var commandText = Format(Sql.PurgeBatchOfExpiredMessagesText, purgeBatchSize, qualifiedTableName);
-
-            using (var command = new SqlCommand(commandText, connection))
+            using (var command = new SqlCommand(purgeExpiredCommand, connection))
             {
+                command.Parameters.AddWithValue("@BatchSize", purgeBatchSize);
                 return await command.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
         }
 
         public async Task LogWarningWhenIndexIsMissing(SqlConnection connection)
         {
-            var qualifiedTableName1 = qualifiedTableName;
-            var commandText = Format(Sql.CheckIfExpiresIndexIsPresent, Sql.ExpiresIndexName, qualifiedTableName1);
-
-            using (var command = new SqlCommand(commandText, connection))
+            using (var command = new SqlCommand(checkIndexCommand, connection))
             {
                 var rowsCount = (int) await command.ExecuteScalarAsync().ConfigureAwait(false);
 
                 if (rowsCount == 0)
                 {
-                    Logger.Warn(Format(@"Table {0} does not contain index '{1}'." + Environment.NewLine + "Adding this index will speed up the process of purging expired messages from the queue. Please consult the documentation for further information.", qualifiedTableName1, Sql.ExpiresIndexName));
+                    Logger.Warn($@"Table {qualifiedTableName} does not contain index 'Index_Expires'.{Environment.NewLine}Adding this index will speed up the process of purging expired messages from the queue. Please consult the documentation for further information.");
                 }
             }
         }
@@ -154,5 +149,11 @@ namespace NServiceBus.Transport.SQLServer
 
         static ILog Logger = LogManager.GetLogger(typeof(TableBasedQueue));
         string qualifiedTableName;
+        string peekCommand;
+        string receiveCommand;
+        string sendCommand;
+        string purgeCommand;
+        string purgeExpiredCommand;
+        string checkIndexCommand;
     }
 }
